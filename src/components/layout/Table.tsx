@@ -36,10 +36,12 @@ interface Props<T> {
   size?: "default" | "small"
   style?: CSSProperties
   pagination?: number
+  children?: ReactNode
 }
 
 function Table<T>({ columns, dataSource, filter, rowKey, ...props }: Props<T>) {
   const { initialSorterKey, size = "default", style, pagination } = props
+  const { children } = props
 
   /* helpers */
   const getClassName = ({ align }: Column<T>) => cx(align)
@@ -157,6 +159,7 @@ function Table<T>({ columns, dataSource, filter, rowKey, ...props }: Props<T>) {
         </thead>
 
         <tbody>
+          {children}
           {dataSource
             .filter((data) => filter?.(data) ?? true)
             .sort((a, b) => props.sorter?.(a, b) || sorter?.(a, b) || 0)

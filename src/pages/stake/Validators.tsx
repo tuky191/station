@@ -1,6 +1,7 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
+import { sort } from "ramda"
 import VerifiedIcon from "@mui/icons-material/Verified"
 import { readPercent } from "@terra.kitchen/utils"
 import { Validator } from "@terra-money/terra.js"
@@ -14,6 +15,8 @@ import { useDelegations, useUnbondings } from "data/queries/staking"
 import { getCalcUptime, getCalcVotingPowerRate } from "data/Terra/TerraAPI"
 import { useTerraValidators } from "data/Terra/TerraAPI"
 import { Page, Card, Table, Flex, Grid } from "components/layout"
+import { Button } from "components/general"
+import { TooltipIcon } from "components/display"
 import { Read } from "components/token"
 import WithSearchInput from "pages/custom/WithSearchInput"
 import ProfileIcon from "./components/ProfileIcon"
@@ -80,12 +83,70 @@ const Validators = () => {
     return t("{{count}} active validators", { count })
   }
 
+  const [collapsed, setCollapsed] = useState(true)
+
+  const dataSource = useMemo(() => {
+    if (!activeValidators) return
+
+    const sorted = sort(
+      (a, b) => Number(b.voting_power_rate) - Number(a.voting_power_rate),
+      activeValidators
+    )
+
+    const superm = collectSumBiggerThanThreshold(
+      sorted,
+      ({ voting_power_rate }) => voting_power_rate,
+      1 / 3
+    )
+
+    const minorValidators = activeValidators.filter((a) =>
+      superm.every((s) => s.operator_address !== a.operator_address)
+    )
+
+    return sort(
+      (a, b) =>
+        Number(b.uptime) - Number(a.uptime) ||
+        Number(a.commission.commission_rates.rate) -
+          Number(b.commission.commission_rates.rate) ||
+        Number(b.voting_power_rate) - Number(a.voting_power_rate),
+      collapsed ? minorValidators : activeValidators
+    )
+  }, [activeValidators, collapsed])
+
   const render = (keyword: string) => {
-    if (!activeValidators) return null
+    if (!dataSource) return null
+
+    const renderToggle = () => {
+      if (!collapsed) return null
+
+      return (
+        <td colSpan={5}>
+          <Flex className={styles.flex}>
+            <section className={styles.super}>
+              <TooltipIcon
+                content={
+                  <>
+                    <li>Validators with accumulative voting power of 33%</li>
+                    <li>The network can stop if super majority colludes</li>
+                  </>
+                }
+              >
+                Super majority
+              </TooltipIcon>
+              are hidden to help decentralize
+            </section>
+
+            <Button size="small" onClick={() => setCollapsed(false)}>
+              {t("Show")}
+            </Button>
+          </Flex>
+        </td>
+      )
+    }
 
     return (
       <Table
-        dataSource={activeValidators}
+        dataSource={dataSource}
         filter={({ description: { moniker }, operator_address }) => {
           if (!keyword) return true
           return [moniker.toLowerCase(), operator_address].some((text) =>
@@ -206,7 +267,9 @@ const Validators = () => {
             align: "right",
           },
         ]}
-      />
+      >
+        {renderToggle()}
+      </Table>
     )
   }
 
@@ -227,3 +290,26 @@ export const getIsBonded = (status: BondStatus) =>
 
 export const getIsUnbonded = (status: BondStatus) =>
   bondStatusFromJSON(BondStatus[status]) === BondStatus.BOND_STATUS_UNBONDED
+
+function collectSumBiggerThanThreshold<T>(
+  list: T[],
+  getValue: (item: T) => number,
+  threshold: number
+): T[] {
+  interface V {
+    list: T[]
+    value: number
+  }
+
+  const fn = (acc: V, index = 0): V => {
+    const cur = list[index]
+    const nextValue = acc.value + getValue(cur)
+
+    if (nextValue < threshold)
+      return fn({ list: [...acc.list, cur], value: nextValue }, index + 1)
+
+    return acc
+  }
+
+  return fn({ list: [], value: 0 }).list
+}

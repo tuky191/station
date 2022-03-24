@@ -129,9 +129,9 @@ export const getCalcVotingPowerRate = (TerraValidators: TerraValidator[]) => {
       ({ operator_address }) => operator_address === address
     )
 
-    if (!validator) return
+    if (!validator) return 0
     const { voting_power } = validator
-    return voting_power ? Number(validator.voting_power) / total : undefined
+    return voting_power ? Number(validator.voting_power) / total : 0
   }
 }
 
